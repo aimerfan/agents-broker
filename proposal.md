@@ -2,7 +2,11 @@
 
 讓多個各自獨立開啟的 Claude Code session 在 Windows 上經由一個常駐 broker 互通訊息。
 
-狀態:地基驗證完成,spike 可跑,正式實作未開始。最後更新 2026-08-21。
+> **狀態:已終止(2026-09-14)。** 前提由官方在 Claude Code 2.1.239 解決,Windows
+> 已原生支援 cross-session `SendMessage` / `ListAgents`,並於 2.1.270 實測通過。
+> 理由與實測見文末〈結語〉。以下本文保留 2026-08-21 的原樣,未回頭修訂。
+
+狀態(原文,2026-08-21):地基驗證完成,spike 可跑,正式實作未開始。
 
 ## 為什麼要做
 
@@ -150,3 +154,54 @@ WebSocket bus 與 Monitor 本身跨平台,已實測。
 - `package.json` / `node_modules/` — 只依賴 `ws`(Node 內建只有 WebSocket client,沒有 server)
 
 尚未 `git init`。
+
+---
+
+## 結語:專案終止(2026-09-14)
+
+**前提已由官方解決。本專案不再實作。**
+
+Claude Code **2.1.239** changelog:
+
+> Windows: cross-session messaging is now available, so Claude Code sessions
+> across your machines can message each other with `SendMessage` and find each
+> other with `ListAgents`, as on macOS and Linux
+
+本文開頭「官方通道走 Unix domain socket,Windows 整條缺席」在 2026-08-21 成立,
+現在不成立。
+
+### 實測(2026-09-14,Claude Code 2.1.270,Windows 11)
+
+兩個各自獨立開啟的終端機 session 對測,三條全過:互相在 `ListAgents` 看得見、
+`SendMessage` 送得到、**且訊息在對方 idle 時抵達並喚醒它,無任何使用者輸入**。
+
+第三條正是本文〈已驗證的地基〉標為「整個專案分水嶺」的那一條。官方路徑現已自行滿足。
+
+### 需求對照
+
+| 原需求 | 現況 |
+|---|---|
+| Windows 可用 | 官方已解決。這是整個專案存在的理由 |
+| 訊息能中斷 idle session | 官方原生語意,不需要 Monitor 撐著 |
+| 訊息不落盤 | 官方有落盤。原文已標為非硬性要求 |
+| 身分(未決事項) | 已解決:`ListAgents` 會告訴 session 它自己的名字 |
+| **頻道語意 / fan-out** | **唯一未被官方覆蓋的**。官方是點對點,按名字送 |
+
+官方路徑另外附帶了本專案「尚未實作」清單裡的 rate limit、訊息長度上限、收訊開關,
+以及本文〈已知陷阱〉提過的「訊息不帶 user authority」。相對地,自製 broker 要自己
+扛 PID 回收(見〈已知陷阱〉第一條,已踩過)。
+
+### 剩下的 delta
+
+只有 fan-out,以及「中途加入的 session 回放最近 N 則」。但成本結構變了:以前要一支
+常駐 broker 才做得到,現在是 `ListAgents` 拿名單 → 迴圈 `SendMessage`,十幾行的 skill
+就到頂。三個 session 的場景用不著常駐進程。
+
+### 保留與作廢
+
+**保留**:〈已驗證的地基〉那三條實測不作廢。它們證明的是 Monitor `ws` source 在
+Windows 可用、且外部事件能中斷 idle session —— 這個結論與本專案存亡無關,日後任何
+要把外部事件推進 Claude Code 對話的設計都還用得上。
+
+**作廢**:〈未決事項〉中「plugin `monitors` manifest 支不支援 `ws` source」一條
+不再需要查證。〈目前的檔案〉末句「尚未 git init」已過時(repo 已建立)。
